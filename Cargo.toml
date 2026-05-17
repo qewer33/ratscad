@@ -1,0 +1,11 @@
+[package]
+name = "ratscad"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ratatui = "0.30.0"
+ratatui-ratty = "0.2.0"
+ratatui-code-editor = { version = "0.0.4", features = ["crossterm"] }
+crossterm = "0.29.0"
+anyhow = "1"
