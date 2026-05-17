@@ -1,7 +1,22 @@
 [package]
 name = "ratscad"
 version = "0.1.0"
+description = "CAD for the terminal"
+authors = ["qewer <yerdemergul@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/qewer33/ratscad"
+repository = "https://github.com/qewer33/ratscad"
+keywords = ["ratatui", "openscad", "tui", "terminal", "cad"]
+categories = ["command-line-utilities", "graphics"]
 edition = "2024"
+exclude = [
+    "references/**",
+    "scripts/**",
+    "assets/screenshot_full.png",
+    "assets/screenshot_viewer.png",
+    ".github/**",
+]
 
 [dependencies]
 ratatui = "0.30.0"
