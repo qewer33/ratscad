@@ -12,7 +12,7 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
-use ratatui_ratty::{ObjectFormat, RattyGraphic, RattyGraphicSettings};
+use ratatui_ratty::{ObjectFormat, RattyGraphic, RattyGraphicClip, RattyGraphicSettings};
 
 use crate::status::{desc_style, key_style};
 
@@ -178,7 +178,7 @@ impl PreviewPane {
         frame.render_widget(Paragraph::new(Line::from(spans)), content_area);
     }
 
-    pub fn render(&self, frame: &mut Frame<'_>, area: Rect) {
+    pub fn render(&mut self, frame: &mut Frame<'_>, area: Rect) {
         let block = Block::default()
             .borders(Borders::LEFT)
             .border_style(Style::default().fg(Color::DarkGray));
@@ -187,6 +187,7 @@ impl PreviewPane {
         frame.render_widget(Clear, inner);
 
         if self.has_mesh {
+            self.graphic.settings_mut().clip = RattyGraphicClip::region(inner);
             (&self.graphic).render(inner, frame.buffer_mut());
         }
 

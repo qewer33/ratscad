@@ -1190,8 +1190,7 @@ dependencies = [
 [[package]]
 name = "ratatui-ratty"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ce4bb6a74b9f7ca6526a1af1437c4b6f12b24608ec6e8478adca19f388c9bab"
+source = "git+https://github.com/orhun/ratty?rev=73267bfee8622da4cb3d66d1ceb3d40dfdc4f990#73267bfee8622da4cb3d66d1ceb3d40dfdc4f990"
 dependencies = [
  "base64",
  "ratatui-core",

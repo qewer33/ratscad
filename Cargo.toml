@@ -20,7 +20,7 @@ exclude = [
 
 [dependencies]
 ratatui = "0.30.0"
-ratatui-ratty = "0.2.0"
+ratatui-ratty = { git = "https://github.com/orhun/ratty", rev = "73267bfee8622da4cb3d66d1ceb3d40dfdc4f990", package = "ratatui-ratty" }
 ratatui-code-editor = { version = "0.0.4", features = ["crossterm"] }
 crossterm = "0.29.0"
 anyhow = "1"
