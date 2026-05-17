@@ -25,21 +25,38 @@
 - **Fullscreen viewer toggle** (`f` while the viewer is focused)
 - **Bottom toolbar** showing the currently relevant shortcuts in reverse-video chips
 
+## Installation
+
+Install the published crate with Cargo:
+
+```bash
+cargo install ratscad
+```
+
+Requirements:
+
+- `openscad` binary on `PATH` (older versions without OBJ export are supported via a binary STL → OBJ converter)
+- A GPU / graphics stack supported by Bevy and wgpu (for Ratty's renderer)
+
 ## Running
 
 ratscad targets the [Ratty](https://github.com/orhun/ratty) terminal emulator. Its 3D payload protocol is what makes the inline mesh preview possible; any other terminal will just see the editor with an empty preview pane.
 
-The wrapper script clones Ratty into `references/ratty/` (if it isn't there yet), builds both binaries and launches `ratty -e ratscad`:
+If you installed `ratscad` from `crates.io`, launch it from Ratty:
+
+```bash
+ratty -e ratscad
+```
+
+For local development, the wrapper script clones Ratty into `references/ratty/` (if it isn't there yet), builds both binaries and launches `ratty -e ratscad`:
 
 ```bash
 ./scripts/run-in-ratty.sh
 ```
 
-Requirements:
+Development requirements:
 
 - Rust toolchain with Cargo
-- `openscad` binary on `PATH` (older versions without OBJ export are supported via a binary STL → OBJ converter)
-- A GPU / graphics stack supported by Bevy and wgpu (for Ratty's renderer)
 
 ## Key Bindings
 
