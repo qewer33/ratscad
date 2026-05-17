@@ -6,7 +6,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 
 use std::path::PathBuf;
 
@@ -38,6 +38,7 @@ pub struct App {
     menubar_index: usize,
     menu_popup: Option<MenuPopup>,
     prompt: Option<Prompt>,
+    error_overlay: Option<String>,
     fullscreen: bool,
     tab_bar_area: Rect,
     editor_area: Rect,
@@ -59,6 +60,7 @@ impl App {
             menubar_index: 0,
             menu_popup: None,
             prompt: None,
+            error_overlay: None,
             fullscreen: false,
             tab_bar_area: Rect::default(),
             editor_area: Rect::default(),
@@ -102,7 +104,8 @@ impl App {
             self.editor_area = Rect::default();
             self.preview_area = body_area;
             self.preview.render(frame, body_area);
-            self.preview.render_toolbar(frame, pane_toolbar_area, false, true);
+            self.preview
+                .render_toolbar(frame, pane_toolbar_area, false, true);
         } else {
             let panes = Layout::default()
                 .direction(Direction::Horizontal)
@@ -139,6 +142,9 @@ impl App {
         if let Some(prompt) = &self.prompt {
             prompt.render(frame, frame.area());
         }
+        if let Some(error) = &self.error_overlay {
+            render_error_overlay(frame, frame.area(), error);
+        }
     }
 
     fn pump_events(&mut self) -> anyhow::Result<()> {
@@ -171,6 +177,13 @@ impl App {
                     self.prompt = None;
                     self.handle_prompt_submit(kind, text)?;
                 }
+            }
+            return Ok(());
+        }
+        if self.error_overlay.is_some() {
+            match key.code {
+                KeyCode::Esc | KeyCode::Enter => self.error_overlay = None,
+                _ => {}
             }
             return Ok(());
         }
@@ -321,7 +334,7 @@ impl App {
             MenuAction::Save => {
                 if self.editor.active_has_path() {
                     if let Err(e) = self.editor.save_active() {
-                        self.status = BuildStatus::Failed(format!("save failed: {e}"));
+                        self.set_error(format!("save failed: {e}"));
                     }
                 } else {
                     self.prompt = Some(Prompt::save_as(self.editor.active_name()));
@@ -354,12 +367,12 @@ impl App {
                     self.focus = Focus::Editor;
                 }
                 Err(e) => {
-                    self.status = BuildStatus::Failed(format!("open failed: {e}"));
+                    self.set_error(format!("open failed: {e}"));
                 }
             },
             PromptKind::SaveAs => {
                 if let Err(e) = self.editor.save_active_as(path) {
-                    self.status = BuildStatus::Failed(format!("save failed: {e}"));
+                    self.set_error(format!("save failed: {e}"));
                 }
             }
         }
@@ -402,10 +415,15 @@ impl App {
             }
             MeshMsg::Failed(err) => {
                 self.preview.set_dim(false)?;
-                self.status = BuildStatus::Failed(err);
+                self.set_error(err);
             }
         }
         Ok(())
+    }
+
+    fn set_error(&mut self, message: String) {
+        self.status = BuildStatus::Failed(message.clone());
+        self.error_overlay = Some(message);
     }
 
     fn refresh_preview_for_active(&mut self) -> anyhow::Result<()> {
@@ -474,5 +492,37 @@ fn render_header(frame: &mut Frame<'_>, area: Rect, focus: Focus, menu_index: us
     frame.render_widget(
         Paragraph::new(Line::from(spans)).style(Style::default().bg(bar_bg)),
         area,
+    );
+}
+
+fn render_error_overlay(frame: &mut Frame<'_>, screen: Rect, error: &str) {
+    let width = 96.min(screen.width.saturating_sub(4)).max(20);
+    let height = 8u16.min(screen.height.saturating_sub(2)).max(3);
+    let x = screen.x + screen.width.saturating_sub(width) / 2;
+    let y = screen.y + screen.height.saturating_sub(height) / 2;
+    let area = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+
+    frame.render_widget(Clear, area);
+    let block = Block::bordered()
+        .border_style(Style::default().fg(Color::Red))
+        .title(Span::styled(
+            " Build Error ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        ));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    frame.render_widget(
+        Paragraph::new(error)
+            .style(Style::default().fg(Color::White))
+            .wrap(Wrap { trim: false }),
+        inner,
     );
 }
