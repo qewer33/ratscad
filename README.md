@@ -2,7 +2,7 @@
 
 **ratscad** is a terminal-based IDE for [OpenSCAD](https://openscad.org/) with a live, hardware-accelerated 3D preview rendered directly in the terminal. It's built with Rust, [Ratatui](https://ratatui.rs) and the [Ratty Graphics Protocol](https://github.com/orhun/ratty) for inline 3D objects.
 
-![screenshot](./assets/screenshot.png)
+![screenshot](./assets/screenshot_full.png)
 
 > [!WARNING]
 > ratscad is currently **experimental**. Please open an issue for any bugs or crashes you encounter.
