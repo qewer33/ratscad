@@ -4,6 +4,10 @@
 
 ![screenshot](./assets/screenshot_full.png)
 
+<div>
+  <video src="https://github.com/user-attachments/assets/7fe31947-b734-4d19-9fba-ef606cc7b975" alt="Ratscad Demo"/>
+</div>
+
 > [!WARNING]
 > ratscad is currently **experimental**. Please open an issue for any bugs or crashes you encounter.
 
