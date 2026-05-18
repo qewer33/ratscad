@@ -46,9 +46,10 @@ impl ConsolePane {
             .borders(Borders::TOP)
             .border_style(Style::default().fg(Color::DarkGray))
             .title(Span::styled(
-                " Output ",
+                " output ",
                 Style::default()
-                    .fg(Color::Gray)
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ));
         let inner = block.inner(area);

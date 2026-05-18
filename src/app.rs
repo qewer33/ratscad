@@ -117,7 +117,7 @@ impl App {
             self.editor_area = Rect::default();
             self.console_area = Rect::default();
             self.preview_area = body_area;
-            self.preview.render(frame, body_area);
+            self.preview.render(frame, body_area, false);
             self.preview
                 .render_toolbar(frame, pane_toolbar_area, false, true);
         } else {
@@ -145,7 +145,7 @@ impl App {
             if self.console_visible {
                 self.console.render(frame, self.console_area);
             }
-            self.preview.render(frame, self.preview_area);
+            self.preview.render(frame, self.preview_area, true);
             if matches!(self.focus, Focus::Editor) {
                 self.editor.render_toolbar(frame, pane_toolbars[0]);
             }
@@ -431,6 +431,26 @@ impl App {
         // Prompt swallows mouse (keyboard-driven).
         if self.prompt.is_some() {
             return Ok(());
+        }
+
+        // While a menu is open, hovering over a *different* menubar item should
+        // switch which menu is shown — same as a desktop GUI.
+        if self.menu_popup.is_some()
+            && hit(self.header_area, mouse.column, mouse.row)
+            && matches!(
+                mouse.kind,
+                MouseEventKind::Moved
+                    | MouseEventKind::Drag(MouseButton::Left)
+                    | MouseEventKind::Down(MouseButton::Left)
+            )
+        {
+            if let Some(idx) = menubar_item_at_column(mouse.column) {
+                if idx != self.menubar_index {
+                    self.menubar_index = idx;
+                    self.open_active_menu();
+                }
+                return Ok(());
+            }
         }
 
         // Menu popup absorbs mouse: hover updates selection, click activates

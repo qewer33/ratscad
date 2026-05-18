@@ -166,10 +166,8 @@ impl PreviewPane {
         let desc = desc_style();
         let spans = vec![
             Span::raw(" "),
-            Span::styled(" arrows ", key),
-            Span::styled(" rotate ", desc),
-            Span::styled(" Ctrl+arr ", key),
-            Span::styled(" pan ", desc),
+            Span::styled("Ctrl + / ←↑↓→ ", key),
+            Span::styled(" pan / rotate ", desc),
             Span::styled(" z/x ", key),
             Span::styled(" zoom ", desc),
             Span::styled(" f ", key),
@@ -178,12 +176,17 @@ impl PreviewPane {
         frame.render_widget(Paragraph::new(Line::from(spans)), content_area);
     }
 
-    pub fn render(&self, frame: &mut Frame<'_>, area: Rect) {
-        let block = Block::default()
-            .borders(Borders::LEFT)
-            .border_style(Style::default().fg(Color::DarkGray));
-        let inner = block.inner(area);
-        block.render(area, frame.buffer_mut());
+    pub fn render(&self, frame: &mut Frame<'_>, area: Rect, border: bool) {
+        let inner = if border {
+            let block = Block::default()
+                .borders(Borders::LEFT)
+                .border_style(Style::default().fg(Color::DarkGray));
+            let i = block.inner(area);
+            block.render(area, frame.buffer_mut());
+            i
+        } else {
+            area
+        };
         frame.render_widget(Clear, inner);
 
         if self.has_mesh {
