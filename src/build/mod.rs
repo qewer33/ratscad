@@ -1,5 +1,6 @@
 mod openscad;
 
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -14,10 +15,10 @@ pub struct BuildCoordinator {
 }
 
 impl BuildCoordinator {
-    pub fn spawn() -> Self {
+    pub fn spawn(binary: PathBuf) -> Self {
         let (source_tx, source_rx) = mpsc::channel::<String>();
         let (mesh_tx, mesh_rx) = mpsc::channel::<MeshMsg>();
-        thread::spawn(move || worker(source_rx, mesh_tx));
+        thread::spawn(move || worker(binary, source_rx, mesh_tx));
         Self { source_tx, mesh_rx }
     }
 
@@ -37,7 +38,7 @@ impl BuildCoordinator {
     }
 }
 
-fn worker(source_rx: Receiver<String>, mesh_tx: Sender<MeshMsg>) {
+fn worker(binary: PathBuf, source_rx: Receiver<String>, mesh_tx: Sender<MeshMsg>) {
     let mut pending: Option<(String, Instant)> = None;
     loop {
         let recv_timeout = pending
@@ -54,7 +55,7 @@ fn worker(source_rx: Receiver<String>, mesh_tx: Sender<MeshMsg>) {
                     && started.elapsed() >= DEBOUNCE
                 {
                     let _ = mesh_tx.send(MeshMsg::Started);
-                    match openscad::run_openscad(&source) {
+                    match openscad::run_openscad(&binary, &source) {
                         Ok(bytes) => {
                             let _ = mesh_tx.send(MeshMsg::Ready { source, bytes });
                         }

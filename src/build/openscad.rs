@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 #[derive(Debug)]
@@ -23,8 +24,8 @@ impl std::fmt::Display for BuildError {
 
 impl std::error::Error for BuildError {}
 
-pub fn run_openscad(source: &str) -> Result<Vec<u8>, BuildError> {
-    let mut child = Command::new("openscad")
+pub fn run_openscad(binary: &Path, source: &str) -> Result<Vec<u8>, BuildError> {
+    let mut child = Command::new(binary)
         .args(["-", "-o", "-", "--export-format", "binstl"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

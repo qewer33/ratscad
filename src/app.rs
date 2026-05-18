@@ -14,7 +14,9 @@ use crate::build::BuildCoordinator;
 use crate::console::{ConsoleLevel, ConsolePane};
 use crate::editor::EditorPane;
 use crate::events::{MeshMsg, poll_input};
+use crate::install::{InstallOutcome, InstallPopup};
 use crate::menu::{MenuAction, MenuPopup, MenuResult};
+use crate::openscad;
 use crate::preview::PreviewPane;
 use crate::prompt::{Prompt, PromptKind, PromptResult};
 use crate::settings::Settings;
@@ -34,12 +36,13 @@ const MENU_ITEMS: [&str; 4] = ["File", "Edit", "View", "Help"];
 pub struct App {
     editor: EditorPane,
     preview: PreviewPane,
-    build: BuildCoordinator,
+    build: Option<BuildCoordinator>,
     console: ConsolePane,
     focus: Focus,
     menubar_index: usize,
     menu_popup: Option<MenuPopup>,
     prompt: Option<Prompt>,
+    install: Option<InstallPopup>,
     fullscreen: bool,
     console_visible: bool,
     auto_build: bool,
@@ -55,18 +58,51 @@ pub struct App {
 impl App {
     pub fn new() -> anyhow::Result<Self> {
         let editor = EditorPane::new()?;
-        let build = BuildCoordinator::spawn();
-        build.submit(editor.current_text().to_string());
         let settings = Settings::load();
+        let mut console = ConsolePane::new();
+
+        // Decide up front whether we already have an openscad binary cached.
+        // If yes, spawn the build worker and kick off the initial build right
+        // away. If no, leave both build+install in a pending state so the UI
+        // renders immediately and the install popup drives the download
+        // before the first build can fire.
+        let (build, install) = match openscad::try_cached() {
+            Some(path) => {
+                let coord = BuildCoordinator::spawn(path);
+                coord.submit(editor.current_text().to_string());
+                (Some(coord), None)
+            }
+            None => match openscad::snapshot_url_for_display() {
+                Some(url) => match openscad::start_install() {
+                    Ok(rx) => (None, Some(InstallPopup::new(rx, url))),
+                    Err(err) => {
+                        console.push(
+                            ConsoleLevel::Error,
+                            format!("install failed: {err}"),
+                        );
+                        (None, None)
+                    }
+                },
+                None => {
+                    // Unsupported platform. Fall back to system openscad
+                    // and let any spawn errors surface through build output.
+                    let coord = BuildCoordinator::spawn(PathBuf::from("openscad"));
+                    coord.submit(editor.current_text().to_string());
+                    (Some(coord), None)
+                }
+            },
+        };
+
         Ok(Self {
             editor,
             preview: PreviewPane::new(),
             build,
-            console: ConsolePane::new(),
+            console,
             focus: Focus::Editor,
             menubar_index: 0,
             menu_popup: None,
             prompt: None,
+            install,
             fullscreen: false,
             console_visible: settings.console_visible,
             auto_build: settings.auto_build,
@@ -165,16 +201,53 @@ impl App {
         if let Some(prompt) = &self.prompt {
             prompt.render(frame, frame.area());
         }
+        if let Some(install) = &self.install {
+            install.render(frame, frame.area());
+        }
     }
 
     fn pump_events(&mut self) -> anyhow::Result<()> {
+        self.poll_install();
         if let Some(event) = poll_input(POLL_TIMEOUT)? {
             self.handle_input(event)?;
         }
-        for msg in self.build.drain() {
-            self.handle_mesh(msg)?;
+        if let Some(build) = &self.build {
+            for msg in build.drain() {
+                self.handle_mesh(msg)?;
+            }
         }
         Ok(())
+    }
+
+    fn poll_install(&mut self) {
+        let outcome = match self.install.as_mut() {
+            Some(install) => install.poll(),
+            None => return,
+        };
+        match outcome {
+            InstallOutcome::InProgress => {}
+            InstallOutcome::Done(path) => {
+                self.install = None;
+                self.console.push(
+                    ConsoleLevel::Success,
+                    format!("openscad installed at {}", path.display()),
+                );
+                let coord = BuildCoordinator::spawn(path);
+                coord.submit(self.editor.current_text().to_string());
+                self.build = Some(coord);
+            }
+            InstallOutcome::Failed(err) => {
+                self.install = None;
+                self.console
+                    .push(ConsoleLevel::Error, format!("install failed: {err}"));
+            }
+        }
+    }
+
+    fn submit_build(&self, source: String) {
+        if let Some(build) = &self.build {
+            build.submit(source);
+        }
     }
 
     fn handle_input(&mut self, event: Event) -> anyhow::Result<()> {
@@ -290,7 +363,7 @@ impl App {
             Focus::Editor => {
                 if let Some(source) = self.editor.on_key(key, self.editor_area)? {
                     if self.auto_build {
-                        self.build.submit(source);
+                        self.submit_build(source);
                     }
                 }
             }
@@ -378,7 +451,7 @@ impl App {
                 self.should_quit = true;
             }
             MenuAction::Build => {
-                self.build.submit(self.editor.current_text().to_string());
+                self.submit_build(self.editor.current_text().to_string());
             }
             MenuAction::ToggleAutoBuild => {
                 self.auto_build = !self.auto_build;
@@ -559,7 +632,7 @@ impl App {
             self.preview.register_mesh(&bytes)?;
             self.preview.set_dim(false)?;
         } else {
-            self.build.submit(self.editor.current_text().to_string());
+            self.submit_build(self.editor.current_text().to_string());
         }
         Ok(())
     }

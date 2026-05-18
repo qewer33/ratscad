@@ -26,3 +26,5 @@ crossterm = "0.29.0"
 anyhow = "1"
 confy = "0.6"
 serde = { version = "1", features = ["derive"] }
+ureq = "2"
+directories = "5"
