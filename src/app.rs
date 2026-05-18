@@ -6,17 +6,18 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
+use ratatui::widgets::Paragraph;
 
 use std::path::PathBuf;
 
 use crate::build::BuildCoordinator;
+use crate::console::{ConsoleLevel, ConsolePane};
 use crate::editor::EditorPane;
 use crate::events::{MeshMsg, poll_input};
 use crate::menu::{MenuAction, MenuPopup, MenuResult};
 use crate::preview::PreviewPane;
 use crate::prompt::{Prompt, PromptKind, PromptResult};
-use crate::status::{BuildStatus, GlobalToolbar};
+use crate::status::GlobalToolbar;
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(50);
 
@@ -33,12 +34,11 @@ pub struct App {
     editor: EditorPane,
     preview: PreviewPane,
     build: BuildCoordinator,
-    status: BuildStatus,
+    console: ConsolePane,
     focus: Focus,
     menubar_index: usize,
     menu_popup: Option<MenuPopup>,
     prompt: Option<Prompt>,
-    error_overlay: Option<String>,
     fullscreen: bool,
     tab_bar_area: Rect,
     editor_area: Rect,
@@ -55,12 +55,11 @@ impl App {
             editor,
             preview: PreviewPane::new(),
             build,
-            status: BuildStatus::Idle,
+            console: ConsolePane::new(),
             focus: Focus::Editor,
             menubar_index: 0,
             menu_popup: None,
             prompt: None,
-            error_overlay: None,
             fullscreen: false,
             tab_bar_area: Rect::default(),
             editor_area: Rect::default(),
@@ -115,9 +114,14 @@ impl App {
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
                 .split(pane_toolbar_area);
-            self.editor_area = panes[0];
+            let editor_split = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(1), Constraint::Length(7)])
+                .split(panes[0]);
+            self.editor_area = editor_split[0];
             self.preview_area = panes[1];
             self.editor.render(frame, self.editor_area);
+            self.console.render(frame, editor_split[1]);
             self.preview.render(frame, self.preview_area);
             if matches!(self.focus, Focus::Editor) {
                 self.editor.render_toolbar(frame, pane_toolbars[0]);
@@ -130,20 +134,13 @@ impl App {
             );
         }
 
-        GlobalToolbar {
-            status: &self.status,
-            focus: self.focus,
-        }
-        .render(frame, status_area);
+        GlobalToolbar { focus: self.focus }.render(frame, status_area);
 
         if let Some(menu) = &self.menu_popup {
             menu.render(frame, frame.area());
         }
         if let Some(prompt) = &self.prompt {
             prompt.render(frame, frame.area());
-        }
-        if let Some(error) = &self.error_overlay {
-            render_error_overlay(frame, frame.area(), error);
         }
     }
 
@@ -177,13 +174,6 @@ impl App {
                     self.prompt = None;
                     self.handle_prompt_submit(kind, text)?;
                 }
-            }
-            return Ok(());
-        }
-        if self.error_overlay.is_some() {
-            match key.code {
-                KeyCode::Esc | KeyCode::Enter => self.error_overlay = None,
-                _ => {}
             }
             return Ok(());
         }
@@ -401,7 +391,7 @@ impl App {
     fn handle_mesh(&mut self, msg: MeshMsg) -> anyhow::Result<()> {
         match msg {
             MeshMsg::Started => {
-                self.status = BuildStatus::Building;
+                self.console.push(ConsoleLevel::Building, "building...");
                 self.preview.set_dim(true)?;
             }
             MeshMsg::Ready { source, bytes } => {
@@ -410,7 +400,8 @@ impl App {
                 if source == self.editor.current_text() {
                     self.preview.register_mesh(&bytes)?;
                     self.preview.set_dim(false)?;
-                    self.status = BuildStatus::Ready { bytes: count };
+                    self.console
+                        .push(ConsoleLevel::Success, format!("ready ({count} bytes)"));
                 }
             }
             MeshMsg::Failed(err) => {
@@ -422,17 +413,14 @@ impl App {
     }
 
     fn set_error(&mut self, message: String) {
-        self.status = BuildStatus::Failed(message.clone());
-        self.error_overlay = Some(message);
+        self.console.push(ConsoleLevel::Error, message);
     }
 
     fn refresh_preview_for_active(&mut self) -> anyhow::Result<()> {
         if let Some(bytes) = self.editor.active_cached_mesh() {
             let bytes = bytes.to_vec();
-            let count = bytes.len();
             self.preview.register_mesh(&bytes)?;
             self.preview.set_dim(false)?;
-            self.status = BuildStatus::Ready { bytes: count };
         } else {
             self.build.submit(self.editor.current_text().to_string());
         }
@@ -495,34 +483,3 @@ fn render_header(frame: &mut Frame<'_>, area: Rect, focus: Focus, menu_index: us
     );
 }
 
-fn render_error_overlay(frame: &mut Frame<'_>, screen: Rect, error: &str) {
-    let width = 96.min(screen.width.saturating_sub(4)).max(20);
-    let height = 8u16.min(screen.height.saturating_sub(2)).max(3);
-    let x = screen.x + screen.width.saturating_sub(width) / 2;
-    let y = screen.y + screen.height.saturating_sub(height) / 2;
-    let area = Rect {
-        x,
-        y,
-        width,
-        height,
-    };
-
-    frame.render_widget(Clear, area);
-    let block = Block::bordered()
-        .border_style(Style::default().fg(Color::Red))
-        .title(Span::styled(
-            " Build Error ",
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::Red)
-                .add_modifier(Modifier::BOLD),
-        ));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    frame.render_widget(
-        Paragraph::new(error)
-            .style(Style::default().fg(Color::White))
-            .wrap(Wrap { trim: false }),
-        inner,
-    );
-}

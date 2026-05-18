@@ -6,23 +6,15 @@ use ratatui::widgets::Paragraph;
 
 use crate::app::Focus;
 
-pub enum BuildStatus {
-    Idle,
-    Building,
-    Ready { bytes: usize },
-    Failed(String),
-}
-
-pub struct GlobalToolbar<'a> {
-    pub status: &'a BuildStatus,
+pub struct GlobalToolbar {
     pub focus: Focus,
 }
 
-impl<'a> GlobalToolbar<'a> {
+impl GlobalToolbar {
     pub fn render(&self, frame: &mut Frame<'_>, area: Rect) {
         let split = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(1), Constraint::Length(40)])
+            .constraints([Constraint::Min(1), Constraint::Length(12)])
             .split(area);
         self.render_shortcuts(frame, split[0]);
         self.render_state(frame, split[1]);
@@ -64,20 +56,12 @@ impl<'a> GlobalToolbar<'a> {
 
     fn render_state(&self, frame: &mut Frame<'_>, area: Rect) {
         let bar_bg = Color::Indexed(236);
-        let (label, color) = match self.status {
-            BuildStatus::Idle => ("idle".to_string(), Color::DarkGray),
-            BuildStatus::Building => ("building...".to_string(), Color::Yellow),
-            BuildStatus::Ready { bytes } => (format!("ready ({bytes}b)"), Color::Green),
-            BuildStatus::Failed(msg) => (format!("failed: {}", first_error_line(msg)), Color::Red),
-        };
         let (focus_label, focus_color) = match self.focus {
             Focus::Editor => ("EDITOR", Color::Cyan),
             Focus::Viewer => ("VIEWER", Color::Magenta),
             Focus::Menubar => ("MENU", Color::Green),
         };
         let line = Line::from(vec![
-            Span::styled(label.as_str(), Style::default().fg(color).bg(bar_bg)),
-            Span::styled("  ", Style::default().bg(bar_bg)),
             Span::styled(
                 format!(" {focus_label} "),
                 Style::default()
@@ -110,9 +94,3 @@ pub fn sep_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }
 
-fn first_error_line(stderr: &str) -> &str {
-    stderr
-        .lines()
-        .find(|l| l.contains("ERROR"))
-        .unwrap_or_else(|| stderr.lines().next().unwrap_or(""))
-}

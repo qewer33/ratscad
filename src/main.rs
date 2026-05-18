@@ -1,5 +1,6 @@
 mod app;
 mod build;
+mod console;
 mod editor;
 mod events;
 mod menu;
