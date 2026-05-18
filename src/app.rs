@@ -40,8 +40,12 @@ pub struct App {
     menu_popup: Option<MenuPopup>,
     prompt: Option<Prompt>,
     fullscreen: bool,
+    console_visible: bool,
+    screen_area: Rect,
+    header_area: Rect,
     tab_bar_area: Rect,
     editor_area: Rect,
+    console_area: Rect,
     preview_area: Rect,
     should_quit: bool,
 }
@@ -61,8 +65,12 @@ impl App {
             menu_popup: None,
             prompt: None,
             fullscreen: false,
+            console_visible: true,
+            screen_area: Rect::default(),
+            header_area: Rect::default(),
             tab_bar_area: Rect::default(),
             editor_area: Rect::default(),
+            console_area: Rect::default(),
             preview_area: Rect::default(),
             should_quit: false,
         })
@@ -79,6 +87,7 @@ impl App {
 
     fn draw(&mut self, frame: &mut Frame<'_>) {
         let area = frame.area();
+        self.screen_area = area;
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -96,11 +105,13 @@ impl App {
         let status_area = chunks[4];
 
         render_header(frame, header_area, self.focus, self.menubar_index);
+        self.header_area = header_area;
         self.tab_bar_area = tab_bar_area;
         self.editor.render_tab_bar(frame, tab_bar_area);
 
         if self.fullscreen {
             self.editor_area = Rect::default();
+            self.console_area = Rect::default();
             self.preview_area = body_area;
             self.preview.render(frame, body_area);
             self.preview
@@ -114,14 +125,22 @@ impl App {
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
                 .split(pane_toolbar_area);
-            let editor_split = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Min(1), Constraint::Length(7)])
-                .split(panes[0]);
-            self.editor_area = editor_split[0];
+            if self.console_visible {
+                let editor_split = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Min(1), Constraint::Length(7)])
+                    .split(panes[0]);
+                self.editor_area = editor_split[0];
+                self.console_area = editor_split[1];
+            } else {
+                self.editor_area = panes[0];
+                self.console_area = Rect::default();
+            }
             self.preview_area = panes[1];
             self.editor.render(frame, self.editor_area);
-            self.console.render(frame, editor_split[1]);
+            if self.console_visible {
+                self.console.render(frame, self.console_area);
+            }
             self.preview.render(frame, self.preview_area);
             if matches!(self.focus, Focus::Editor) {
                 self.editor.render_toolbar(frame, pane_toolbars[0]);
@@ -305,10 +324,13 @@ impl App {
     }
 
     fn open_active_menu(&mut self) {
-        if self.menubar_index == 0 {
-            let anchor_x = menubar_item_anchor_x(self.menubar_index);
-            self.menu_popup = Some(MenuPopup::file_menu(anchor_x, 1));
-        }
+        let anchor_x = menubar_item_anchor_x(self.menubar_index);
+        let anchor_y = 1;
+        self.menu_popup = match self.menubar_index {
+            0 => Some(MenuPopup::file_menu(anchor_x, anchor_y)),
+            2 => Some(MenuPopup::view_menu(anchor_x, anchor_y)),
+            _ => None,
+        };
     }
 
     fn apply_menu_action(&mut self, action: MenuAction) -> anyhow::Result<()> {
@@ -340,6 +362,9 @@ impl App {
             MenuAction::Quit => {
                 self.should_quit = true;
             }
+            MenuAction::ToggleConsole => {
+                self.console_visible = !self.console_visible;
+            }
         }
         Ok(())
     }
@@ -370,21 +395,82 @@ impl App {
     }
 
     fn handle_mouse(&mut self, mouse: MouseEvent) -> anyhow::Result<()> {
-        if hit(self.tab_bar_area, mouse.column, mouse.row) {
-            if let crossterm::event::MouseEventKind::Down(_) = mouse.kind {
-                if let Some(idx) = self.editor.tab_at_column(mouse.column, self.tab_bar_area) {
-                    if self.editor.switch_to(idx) {
-                        self.refresh_preview_for_active()?;
-                    }
+        use crossterm::event::{MouseButton, MouseEventKind};
+
+        // Prompt swallows mouse (keyboard-driven).
+        if self.prompt.is_some() {
+            return Ok(());
+        }
+
+        // Menu popup absorbs mouse: hover updates selection, click activates
+        // or closes if outside.
+        if self.menu_popup.is_some() {
+            let screen = self.screen_area;
+            let result = self.menu_popup.as_mut().unwrap().on_mouse(mouse, screen);
+            match result {
+                MenuResult::Pending => {}
+                MenuResult::Cancelled => self.menu_popup = None,
+                MenuResult::Activated(action) => {
+                    self.menu_popup = None;
+                    self.apply_menu_action(action)?;
                 }
             }
             return Ok(());
         }
-        if hit(self.preview_area, mouse.column, mouse.row) {
-            self.preview.on_mouse(mouse)?;
-        } else if hit(self.editor_area, mouse.column, mouse.row) {
-            self.editor.on_mouse(mouse, self.editor_area)?;
+
+        let is_click = matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left));
+
+        // Menubar — open the clicked menu.
+        if hit(self.header_area, mouse.column, mouse.row) {
+            if is_click {
+                if let Some(idx) = menubar_item_at_column(mouse.column) {
+                    self.focus = Focus::Menubar;
+                    self.menubar_index = idx;
+                    self.open_active_menu();
+                }
+            }
+            return Ok(());
         }
+
+        // Tab bar — switch + focus editor.
+        if hit(self.tab_bar_area, mouse.column, mouse.row) {
+            if matches!(mouse.kind, MouseEventKind::Down(_)) {
+                if let Some(idx) = self.editor.tab_at_column(mouse.column, self.tab_bar_area) {
+                    if self.editor.switch_to(idx) {
+                        self.refresh_preview_for_active()?;
+                    }
+                    self.focus = Focus::Editor;
+                }
+            }
+            return Ok(());
+        }
+
+        // Editor pane.
+        if hit(self.editor_area, mouse.column, mouse.row) {
+            if is_click {
+                self.focus = Focus::Editor;
+            }
+            self.editor.on_mouse(mouse, self.editor_area)?;
+            return Ok(());
+        }
+
+        // Console — focus editor on click, no other action.
+        if hit(self.console_area, mouse.column, mouse.row) {
+            if is_click {
+                self.focus = Focus::Editor;
+            }
+            return Ok(());
+        }
+
+        // Preview pane.
+        if hit(self.preview_area, mouse.column, mouse.row) {
+            if is_click {
+                self.focus = Focus::Viewer;
+            }
+            self.preview.on_mouse(mouse)?;
+            return Ok(());
+        }
+
         Ok(())
     }
 
@@ -431,6 +517,22 @@ impl App {
 fn menubar_item_anchor_x(idx: usize) -> u16 {
     // " ratSCAD " (9) + "  │  " (5) = 14, then each " ITEM " (6) + gap "  " (2) = 8
     14 + (idx as u16) * 8
+}
+
+fn menubar_item_at_column(col: u16) -> Option<usize> {
+    const PREFIX: u16 = 14;
+    const STRIDE: u16 = 8;
+    const ITEM_WIDTH: u16 = 6;
+    if col < PREFIX {
+        return None;
+    }
+    let local = col - PREFIX;
+    let idx = local / STRIDE;
+    let within = local % STRIDE;
+    if idx >= MENU_ITEMS.len() as u16 || within >= ITEM_WIDTH {
+        return None;
+    }
+    Some(idx as usize)
 }
 
 fn hit(area: Rect, col: u16, row: u16) -> bool {

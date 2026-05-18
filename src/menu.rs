@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -13,6 +13,7 @@ pub enum MenuAction {
     SaveAs,
     Close,
     Quit,
+    ToggleConsole,
 }
 
 pub struct MenuItem {
@@ -20,6 +21,12 @@ pub struct MenuItem {
     pub shortcut: &'static str,
     pub action: MenuAction,
 }
+
+pub const VIEW_MENU: &[MenuItem] = &[MenuItem {
+    label: "Toggle Console",
+    shortcut: "",
+    action: MenuAction::ToggleConsole,
+}];
 
 pub const FILE_MENU: &[MenuItem] = &[
     MenuItem {
@@ -77,6 +84,15 @@ impl MenuPopup {
         }
     }
 
+    pub fn view_menu(anchor_x: u16, anchor_y: u16) -> Self {
+        Self {
+            items: VIEW_MENU,
+            selected: 0,
+            anchor_x,
+            anchor_y,
+        }
+    }
+
     pub fn on_key(&mut self, key: KeyEvent) -> MenuResult {
         match key.code {
             KeyCode::Up => {
@@ -90,6 +106,60 @@ impl MenuPopup {
             KeyCode::Enter => MenuResult::Activated(self.items[self.selected].action),
             KeyCode::Esc => MenuResult::Cancelled,
             _ => MenuResult::Pending,
+        }
+    }
+
+    pub fn on_mouse(&mut self, event: MouseEvent, screen: Rect) -> MenuResult {
+        let area = self.area(screen);
+        let inside = event.column >= area.x
+            && event.column < area.x + area.width
+            && event.row >= area.y
+            && event.row < area.y + area.height;
+
+        match event.kind {
+            MouseEventKind::Moved if inside => {
+                if let Some(idx) = self.item_at_row(area, event.row) {
+                    self.selected = idx;
+                }
+                MenuResult::Pending
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                if !inside {
+                    return MenuResult::Cancelled;
+                }
+                if let Some(idx) = self.item_at_row(area, event.row) {
+                    MenuResult::Activated(self.items[idx].action)
+                } else {
+                    MenuResult::Pending
+                }
+            }
+            _ => MenuResult::Pending,
+        }
+    }
+
+    fn area(&self, screen: Rect) -> Rect {
+        let max_label = self.items.iter().map(|i| i.label.len()).max().unwrap_or(0);
+        let max_shortcut = self.items.iter().map(|i| i.shortcut.len()).max().unwrap_or(0);
+        let inner_width = max_label + max_shortcut + 4;
+        let width = (inner_width as u16).saturating_add(2);
+        let height = (self.items.len() as u16).saturating_add(2);
+        let x = self.anchor_x.min(screen.x + screen.width.saturating_sub(width));
+        let y = self.anchor_y;
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    fn item_at_row(&self, area: Rect, row: u16) -> Option<usize> {
+        let first_item_row = area.y + 1;
+        let last_item_row = area.y + area.height - 1;
+        if row >= first_item_row && row < last_item_row {
+            Some((row - first_item_row) as usize)
+        } else {
+            None
         }
     }
 
