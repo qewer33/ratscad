@@ -6,6 +6,7 @@ mod events;
 mod menu;
 mod preview;
 mod prompt;
+mod settings;
 mod status;
 
 use std::io;

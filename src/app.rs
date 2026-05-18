@@ -17,6 +17,7 @@ use crate::events::{MeshMsg, poll_input};
 use crate::menu::{MenuAction, MenuPopup, MenuResult};
 use crate::preview::PreviewPane;
 use crate::prompt::{Prompt, PromptKind, PromptResult};
+use crate::settings::Settings;
 use crate::status::GlobalToolbar;
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(50);
@@ -56,6 +57,7 @@ impl App {
         let editor = EditorPane::new()?;
         let build = BuildCoordinator::spawn();
         build.submit(editor.current_text().to_string());
+        let settings = Settings::load();
         Ok(Self {
             editor,
             preview: PreviewPane::new(),
@@ -66,8 +68,8 @@ impl App {
             menu_popup: None,
             prompt: None,
             fullscreen: false,
-            console_visible: true,
-            auto_build: true,
+            console_visible: settings.console_visible,
+            auto_build: settings.auto_build,
             screen_area: Rect::default(),
             header_area: Rect::default(),
             tab_bar_area: Rect::default(),
@@ -380,12 +382,22 @@ impl App {
             }
             MenuAction::ToggleAutoBuild => {
                 self.auto_build = !self.auto_build;
+                self.persist_settings();
             }
             MenuAction::ToggleConsole => {
                 self.console_visible = !self.console_visible;
+                self.persist_settings();
             }
         }
         Ok(())
+    }
+
+    fn persist_settings(&self) {
+        Settings {
+            auto_build: self.auto_build,
+            console_visible: self.console_visible,
+        }
+        .save();
     }
 
     fn handle_prompt_submit(&mut self, kind: PromptKind, text: String) -> anyhow::Result<()> {
