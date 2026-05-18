@@ -1,6 +1,6 @@
 [package]
 name = "ratscad"
-version = "0.1.0"
+version = "0.1.1"
 description = "CAD for the terminal"
 authors = ["qewer <yerdemergul@gmail.com>"]
 license = "MIT"
