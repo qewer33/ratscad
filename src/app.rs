@@ -41,6 +41,7 @@ pub struct App {
     prompt: Option<Prompt>,
     fullscreen: bool,
     console_visible: bool,
+    auto_build: bool,
     screen_area: Rect,
     header_area: Rect,
     tab_bar_area: Rect,
@@ -66,6 +67,7 @@ impl App {
             prompt: None,
             fullscreen: false,
             console_visible: true,
+            auto_build: true,
             screen_area: Rect::default(),
             header_area: Rect::default(),
             tab_bar_area: Rect::default(),
@@ -244,6 +246,10 @@ impl App {
                     self.apply_menu_action(MenuAction::SaveAs)?;
                     return Ok(());
                 }
+                KeyCode::Char('b') => {
+                    self.apply_menu_action(MenuAction::Build)?;
+                    return Ok(());
+                }
                 KeyCode::Char(c) => {
                     if let Some(n) = c.to_digit(10) {
                         if (1..=9).contains(&n) {
@@ -281,7 +287,9 @@ impl App {
         match self.focus {
             Focus::Editor => {
                 if let Some(source) = self.editor.on_key(key, self.editor_area)? {
-                    self.build.submit(source);
+                    if self.auto_build {
+                        self.build.submit(source);
+                    }
                 }
             }
             Focus::Viewer => self.handle_viewer_key(key)?,
@@ -328,7 +336,12 @@ impl App {
         let anchor_y = 1;
         self.menu_popup = match self.menubar_index {
             0 => Some(MenuPopup::file_menu(anchor_x, anchor_y)),
-            2 => Some(MenuPopup::view_menu(anchor_x, anchor_y)),
+            1 => Some(MenuPopup::edit_menu(anchor_x, anchor_y, self.auto_build)),
+            2 => Some(MenuPopup::view_menu(
+                anchor_x,
+                anchor_y,
+                self.console_visible,
+            )),
             _ => None,
         };
     }
@@ -361,6 +374,12 @@ impl App {
             }
             MenuAction::Quit => {
                 self.should_quit = true;
+            }
+            MenuAction::Build => {
+                self.build.submit(self.editor.current_text().to_string());
+            }
+            MenuAction::ToggleAutoBuild => {
+                self.auto_build = !self.auto_build;
             }
             MenuAction::ToggleConsole => {
                 self.console_visible = !self.console_visible;
