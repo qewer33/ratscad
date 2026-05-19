@@ -15,12 +15,12 @@
 
 - **Tabbed editor** with syntax highlighting, dirty marker, and click-to-switch tab bar
 - **Live 3D preview** of the active document, rendered inline via the Ratty Graphics Protocol
-- **Debounced background builds** via the `openscad` CLI (binary STL on stdout → OBJ → Ratty payload)
+- **Debounced background builds** that call the `openscad` CLI and pipe the result back to Ratty
 - **Per-document build cache** so switching tabs without edits doesn't trigger a rebuild
-- **Mouse + keyboard camera** — drag to rotate, scroll to zoom, arrows / Ctrl+arrows / `z`/`x` from the keyboard
-- **Isometric default view** with a live 2D axis gizmo (X/Y/Z) in the corner
+- **Mouse and keyboard camera** with drag-to-rotate, scroll-to-zoom, and arrow / Ctrl+arrow / z / x keys
+- **Isometric default view** with a live X/Y/Z axis gizmo in the corner
 - **PBR-shaded meshes** with flat per-face normals derived from OpenSCAD's STL output
-- **File menu popup** with New / Open / Save / Save As / Close / Quit
+- **File menu popup** with New, Open, Save, Save As, Close, Quit
 - **On-disk save/load** via a centered path prompt
 - **Fullscreen viewer toggle** (`f` while the viewer is focused)
 - **Bottom toolbar** showing the currently relevant shortcuts in reverse-video chips
@@ -35,8 +35,8 @@ cargo install ratscad
 
 Requirements:
 
-- `openscad` binary on `PATH` (older versions without OBJ export are supported via a binary STL → OBJ converter)
-- A GPU / graphics stack supported by Bevy and wgpu (for Ratty's renderer)
+- `openscad` on `PATH`, or set `OPENSCAD_BIN` to point at a specific binary. On Linux x86_64 ratscad will download a recent OpenSCAD snapshot automatically on first run, so this is only required on other platforms for now.
+- A GPU and graphics stack supported by Bevy and wgpu (for Ratty's renderer)
 
 ## Running
 
@@ -121,65 +121,15 @@ Development requirements:
 
 ## Architecture
 
-ratscad runs as two threads bridged by `std::sync::mpsc` channels:
+ratscad has two threads.
 
-```
-                ┌──────────────────────────────────┐
-                │           UI thread              │
-                │  ratatui draw + crossterm input  │
-                │  tabbed editor + preview pane    │
-                └──────┬───────────────────┬───────┘
-                       │                   │
-                       │                   ▼
-                       │           SourceChanged(text)
-                       │                channel
-                       │                   │
-                       ▲                   ▼
-                MeshMsg::{Started,    ┌────────────────────┐
-                  Ready{src, bytes},  │   Build thread     │
-                  Failed}             │   debounce +       │
-                       │              │   openscad child   │
-                       └──────────────┴────────────────────┘
-                                          │
-                                          ▼
-                                 openscad subprocess
-                                  stdin: SCAD text
-                                  stdout: binary STL
-```
+The UI thread runs the ratatui draw loop, handles keyboard and mouse input, and owns everything you can see on screen: tabs, focus, popups, the editor buffer, the preview pane, the console. The build thread spends most of its time blocking on a channel. When source text arrives it waits out a short debounce window, spawns OpenSCAD, pipes the SCAD source into stdin, and reads binary STL back from stdout. The STL gets parsed and rewritten in-process as an OBJ (with vertex normals so Bevy's PBR shader has something to light, and a Z-up to Y-up axis swap so the model sits the right way around in Bevy's coordinate system). The OBJ bytes flow back to the UI thread, which hands them to Ratty via the inline-graphics protocol.
 
-### UI thread
+There's a per-document build cache so switching tabs without editing doesn't kick off another OpenSCAD run. Each document keeps the last built source string alongside its OBJ bytes; on tab switch we compare the document's current text against its cached source, and if they match we re-register the cached bytes with Ratty and skip the subprocess entirely. Edits invalidate the cache implicitly, because the cached source no longer equals the current text.
 
-Owns the whole `App` (focus state, layout rects, popup state) and the `EditorPane` (a `Vec<Document>`). Runs the ratatui draw loop and dispatches crossterm key/mouse events through a precedence stack: prompt popup → menu popup → global `Ctrl`/`Alt` shortcuts → focus-specific handlers. Writes RGP escape sequences (`register_payload`, `update`, `delete`) to stdout via `ratatui-ratty` so the inline 3D mesh stays in sync with the active document.
+The build worker needs a path to the openscad binary. On first run, if no binary is cached, ratscad shows an install popup and downloads the official OpenSCAD nightly AppImage for Linux x86_64 from `files.openscad.org`. macOS and Windows currently fall back to whatever `openscad` is on `PATH`. The `OPENSCAD_BIN` environment variable overrides either path if you want to point at a specific build.
 
-### Build thread
-
-Receives source snapshots over an mpsc `Sender<String>`. Coalesces rapid edits with a ~400 ms debounce window, then spawns `openscad - -o - --export-format binstl`, pipes the snapshot to stdin and reads binary STL from stdout. The STL is parsed in-process (deriving the triangle count from the file size, since OpenSCAD zeroes the count field when the target is stdout), rotated from OpenSCAD's Z-up convention into Bevy's Y-up convention, and re-emitted as an OBJ with one `vn` per triangle for flat shading. The resulting bytes flow back to the UI thread inside `MeshMsg::Ready { source, bytes }` so the cache can be attributed to the correct document.
-
-### Build cache
-
-Each `Document` keeps a `cached: Option<(String, Vec<u8>)>` pair. When a `Ready` message arrives, the bytes are stored on whichever document's `last_text` matches the built source. On a tab switch the new active document's cache is consulted first — if its cached source matches `last_text`, the bytes are re-registered with Ratty directly and no subprocess work happens. Edits invalidate the cache implicitly because `cached.source` no longer equals `last_text`.
-
-### Module layout
-
-```
-src/
-├── main.rs              entry point + crossterm setup
-├── app.rs               App struct, layout, focus, popup dispatch
-├── events.rs            MeshMsg + crossterm poll helper
-├── status.rs            bottom toolbar + build status + focus chip
-├── prompt.rs            centered text-input popup (Open / Save As)
-├── menu.rs              File menu popup + MenuAction
-├── build/
-│   ├── mod.rs           BuildCoordinator: debounce + worker thread
-│   └── openscad.rs      subprocess + binary STL → OBJ converter
-├── editor/
-│   ├── mod.rs           EditorPane: multi-doc dispatch + tab bar
-│   └── document.rs      Document: name / path / editor / dirty / cache
-└── preview/
-    ├── mod.rs           PreviewPane: RattyGraphic wrapper + camera
-    ├── camera.rs        drag → rotation, scroll → scale math
-    └── gizmo.rs         2D axis gizmo via ratatui Canvas
-```
+Code is laid out as `src/main.rs` and `src/app.rs` at the top, with `src/core/` holding the openscad subsystem and persisted settings, and `src/ui/` holding the editor, preview, console, popups, menubar and toolbar.
 
 ## License
 
