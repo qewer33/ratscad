@@ -1,13 +1,14 @@
+pub mod build;
+pub mod runner;
+
 use std::fs;
 use std::io::{self, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
-// Pinned snapshot URLs per platform. Bump this when you want to roll the
-// installed OpenSCAD version. macOS and Windows arms are intentionally
-// left empty for now; those platforms fall through to system openscad
-// on PATH until we add their URLs.
+// Bump this URL to roll the bundled OpenSCAD version. Other platforms
+// return None and fall back to system openscad on PATH.
 fn snapshot_url() -> Option<&'static str> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("linux", "x86_64") => {
@@ -44,11 +45,9 @@ pub enum InstallMsg {
     Failed(String),
 }
 
-// Returns the cached binary path if it's already downloaded and executable,
-// otherwise None. Also returns None on unsupported platforms; the caller
-// is expected to fall back to system PATH lookup or trigger a download.
+/// Returns the cached binary path if it exists and is executable. None
+/// otherwise, including on platforms without a pinned snapshot URL.
 pub fn try_cached() -> Option<PathBuf> {
-    // Env var override always wins.
     if let Ok(path) = std::env::var("OPENSCAD_BIN") {
         if !path.is_empty() {
             return Some(PathBuf::from(path));
@@ -64,17 +63,14 @@ pub fn try_cached() -> Option<PathBuf> {
     }
 }
 
-// Returns the path we'd download to for the current platform, without
-// triggering a download. Used by the install popup to display the target.
+/// URL the install popup shows to the user, without kicking the download.
 pub fn snapshot_url_for_display() -> Option<&'static str> {
     snapshot_url()
 }
 
-// Spawns a background thread that downloads the snapshot for the current
-// platform, sending progress through the returned receiver. Errors before
-// the thread starts (platform unsupported, cache dir missing) come back
-// as InstallError; everything from the download itself flows as
-// InstallMsg::Progress / Done / Failed.
+/// Spawns the download in a background thread. Errors that prevent the
+/// thread from starting come back synchronously as InstallError; download
+/// progress and outcome arrive on the returned receiver.
 pub fn start_install() -> Result<Receiver<InstallMsg>, InstallError> {
     let url = snapshot_url().ok_or(InstallError::Unsupported)?;
     let cache_path = cache_path_for(url)?;
@@ -148,8 +144,7 @@ impl<R: Read> Read for ProgressReader<'_, R> {
             return Ok(0);
         }
         self.downloaded += n as u64;
-        // Send a progress update every 64 KB, so we don't flood the channel
-        // when the underlying reader returns tiny chunks.
+        // Throttle progress updates so a chatty reader doesn't flood the channel.
         if self.downloaded - self.last_reported >= 64 * 1024 {
             self.last_reported = self.downloaded;
             let _ = self.tx.send(InstallMsg::Progress {

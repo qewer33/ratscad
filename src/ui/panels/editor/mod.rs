@@ -7,7 +7,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use crate::status::{desc_style, key_style, sep_style};
+use crate::ui::theme::{desc_style, key_style, sep_style};
 
 use self::document::Document;
 
@@ -226,7 +226,8 @@ impl EditorPane {
 }
 
 fn tab_width(name: &str) -> u16 {
-    // " ● name " = 1 + 1 + 1 + name.chars().count() + 1
+    // Each tab renders as: leading space, dirty mark, space, name, trailing
+    // space. Four constant cells around the name.
     (name.chars().count() as u16).saturating_add(4)
 }
 

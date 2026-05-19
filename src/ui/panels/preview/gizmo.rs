@@ -17,13 +17,13 @@ pub fn render(frame: &mut Frame<'_>, area: Rect, rotation: [f32; 3]) {
 
     let rot = rotation_matrix(rotation[0], rotation[1], rotation[2]);
 
-    // OpenSCAD axes mapped into Bevy world space (matches the (x,y,z) → (x,z,-y)
-    // swap that `stl_to_obj` applies to mesh data).
+    // OpenSCAD's X, Y, Z unit vectors expressed in Bevy world coordinates.
+    // The Y axis becomes -Z and Z becomes +Y to match the swap that
+    // `stl_to_obj` applies to mesh vertices.
     let x_world = apply(&rot, [1.0, 0.0, 0.0]);
     let y_world = apply(&rot, [0.0, 0.0, -1.0]);
     let z_world = apply(&rot, [0.0, 1.0, 0.0]);
 
-    // Orthographic projection: keep (x, y), discard z.
     let x = [f64::from(x_world[0]), f64::from(x_world[1])];
     let y = [f64::from(y_world[0]), f64::from(y_world[1])];
     let z = [f64::from(z_world[0]), f64::from(z_world[1])];
@@ -77,7 +77,7 @@ fn rotation_matrix(rx_deg: f32, ry_deg: f32, rz_deg: f32) -> [[f32; 3]; 3] {
     let (sy, cy) = (ry.sin(), ry.cos());
     let (sz, cz) = (rz.sin(), rz.cos());
 
-    // Bevy EulerRot::XYZ intrinsic → combined matrix R = Rx · Ry · Rz.
+    // Bevy's EulerRot::XYZ intrinsic, written out as R = Rx * Ry * Rz.
     [
         [cy * cz, -cy * sz, sy],
         [cx * sz + sx * sy * cz, cx * cz - sx * sy * sz, -sx * cy],

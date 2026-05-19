@@ -14,7 +14,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Widget};
 use ratatui_ratty::{ObjectFormat, RattyGraphic, RattyGraphicSettings};
 
-use crate::status::{desc_style, key_style};
+use crate::ui::theme::{desc_style, key_style};
 
 const PREVIEW_ID: u32 = 1;
 const DIMMED_BRIGHTNESS: f32 = 0.35;
@@ -28,8 +28,6 @@ pub struct PreviewPane {
 
 impl PreviewPane {
     pub fn new() -> Self {
-        // Isometric: yaw 45° around Y, pitch arctan(1/√2) ≈ 35.264° around X.
-        // Sign of rx is negative so the camera "looks down" at the +Z (OpenSCAD up) face.
         let graphic = RattyGraphic::new(
             RattyGraphicSettings::new("ratscad-live.obj")
                 .id(PREVIEW_ID)

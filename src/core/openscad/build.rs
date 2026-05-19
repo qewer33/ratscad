@@ -1,13 +1,17 @@
-mod openscad;
-
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::events::MeshMsg;
+use super::runner;
 
 const DEBOUNCE: Duration = Duration::from_millis(400);
+
+pub enum MeshMsg {
+    Started,
+    Ready { source: String, bytes: Vec<u8> },
+    Failed(String),
+}
 
 pub struct BuildCoordinator {
     source_tx: Sender<String>,
@@ -55,7 +59,7 @@ fn worker(binary: PathBuf, source_rx: Receiver<String>, mesh_tx: Sender<MeshMsg>
                     && started.elapsed() >= DEBOUNCE
                 {
                     let _ = mesh_tx.send(MeshMsg::Started);
-                    match openscad::run_openscad(&binary, &source) {
+                    match runner::run_openscad(&binary, &source) {
                         Ok(bytes) => {
                             let _ = mesh_tx.send(MeshMsg::Ready { source, bytes });
                         }

@@ -84,7 +84,6 @@ impl ConsolePane {
             })
             .collect();
 
-        // Show the tail that fits.
         let max_visible = inner.height as usize;
         let start = lines.len().saturating_sub(max_visible);
         let visible: Vec<Line> = lines.into_iter().skip(start).collect();

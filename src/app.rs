@@ -1,6 +1,7 @@
+use std::path::PathBuf;
 use std::time::Duration;
 
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -8,19 +9,16 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use std::path::PathBuf;
-
-use crate::build::BuildCoordinator;
-use crate::console::{ConsoleLevel, ConsolePane};
-use crate::editor::EditorPane;
-use crate::events::{MeshMsg, poll_input};
-use crate::install::{InstallOutcome, InstallPopup};
-use crate::menu::{MenuAction, MenuPopup, MenuResult};
-use crate::openscad;
-use crate::preview::PreviewPane;
-use crate::prompt::{Prompt, PromptKind, PromptResult};
-use crate::settings::Settings;
-use crate::status::GlobalToolbar;
+use crate::core::openscad::build::{BuildCoordinator, MeshMsg};
+use crate::ui::panels::console::{ConsoleLevel, ConsolePane};
+use crate::ui::panels::editor::EditorPane;
+use crate::ui::popups::install::{InstallOutcome, InstallPopup};
+use crate::ui::popups::menu::{MenuAction, MenuPopup, MenuResult};
+use crate::core::openscad;
+use crate::ui::panels::preview::PreviewPane;
+use crate::ui::popups::prompt::{Prompt, PromptKind, PromptResult};
+use crate::core::settings::Settings;
+use crate::ui::theme::GlobalToolbar;
 
 const POLL_TIMEOUT: Duration = Duration::from_millis(50);
 
@@ -61,11 +59,9 @@ impl App {
         let settings = Settings::load();
         let mut console = ConsolePane::new();
 
-        // Decide up front whether we already have an openscad binary cached.
-        // If yes, spawn the build worker and kick off the initial build right
-        // away. If no, leave both build+install in a pending state so the UI
-        // renders immediately and the install popup drives the download
-        // before the first build can fire.
+        // If openscad is cached, spawn the build worker now. Otherwise leave
+        // build empty and show the install popup; the first build fires once
+        // the popup reports Done.
         let (build, install) = match openscad::try_cached() {
             Some(path) => {
                 let coord = BuildCoordinator::spawn(path);
@@ -84,8 +80,7 @@ impl App {
                     }
                 },
                 None => {
-                    // Unsupported platform. Fall back to system openscad
-                    // and let any spawn errors surface through build output.
+                    // No snapshot URL for this platform yet, try system PATH.
                     let coord = BuildCoordinator::spawn(PathBuf::from("openscad"));
                     coord.submit(editor.current_text().to_string());
                     (Some(coord), None)
@@ -208,8 +203,9 @@ impl App {
 
     fn pump_events(&mut self) -> anyhow::Result<()> {
         self.poll_install();
-        if let Some(event) = poll_input(POLL_TIMEOUT)? {
-            self.handle_input(event)?;
+        if event::poll(POLL_TIMEOUT)? {
+            let evt = event::read()?;
+            self.handle_input(evt)?;
         }
         if let Some(build) = &self.build {
             for msg in build.drain() {
@@ -501,13 +497,12 @@ impl App {
     fn handle_mouse(&mut self, mouse: MouseEvent) -> anyhow::Result<()> {
         use crossterm::event::{MouseButton, MouseEventKind};
 
-        // Prompt swallows mouse (keyboard-driven).
         if self.prompt.is_some() {
             return Ok(());
         }
 
-        // While a menu is open, hovering over a *different* menubar item should
-        // switch which menu is shown — same as a desktop GUI.
+        // Hovering off a menubar item to a different one swaps the open menu,
+        // matching how a desktop menubar works.
         if self.menu_popup.is_some()
             && hit(self.header_area, mouse.column, mouse.row)
             && matches!(
@@ -526,8 +521,6 @@ impl App {
             }
         }
 
-        // Menu popup absorbs mouse: hover updates selection, click activates
-        // or closes if outside.
         if self.menu_popup.is_some() {
             let screen = self.screen_area;
             let result = self.menu_popup.as_mut().unwrap().on_mouse(mouse, screen);
@@ -544,7 +537,6 @@ impl App {
 
         let is_click = matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left));
 
-        // Menubar — open the clicked menu.
         if hit(self.header_area, mouse.column, mouse.row) {
             if is_click {
                 if let Some(idx) = menubar_item_at_column(mouse.column) {
@@ -556,7 +548,6 @@ impl App {
             return Ok(());
         }
 
-        // Tab bar — switch + focus editor.
         if hit(self.tab_bar_area, mouse.column, mouse.row) {
             if matches!(mouse.kind, MouseEventKind::Down(_)) {
                 if let Some(idx) = self.editor.tab_at_column(mouse.column, self.tab_bar_area) {
@@ -569,7 +560,6 @@ impl App {
             return Ok(());
         }
 
-        // Editor pane.
         if hit(self.editor_area, mouse.column, mouse.row) {
             if is_click {
                 self.focus = Focus::Editor;
@@ -578,7 +568,7 @@ impl App {
             return Ok(());
         }
 
-        // Console — focus editor on click, no other action.
+        // Console is read-only; clicks just hand focus to the editor.
         if hit(self.console_area, mouse.column, mouse.row) {
             if is_click {
                 self.focus = Focus::Editor;
@@ -586,7 +576,6 @@ impl App {
             return Ok(());
         }
 
-        // Preview pane.
         if hit(self.preview_area, mouse.column, mouse.row) {
             if is_click {
                 self.focus = Focus::Viewer;
@@ -639,7 +628,9 @@ impl App {
 }
 
 fn menubar_item_anchor_x(idx: usize) -> u16 {
-    // " ratSCAD " (9) + "  │  " (5) = 14, then each " ITEM " (6) + gap "  " (2) = 8
+    // Header layout: " ratSCAD " is 9 cells, the separator chunk is 5, then
+    // each " ITEM " block is 6 cells with a 2-cell gap, so items land at
+    // x = 14 + idx * 8.
     14 + (idx as u16) * 8
 }
 

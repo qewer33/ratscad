@@ -1,15 +1,6 @@
 mod app;
-mod build;
-mod console;
-mod editor;
-mod events;
-mod install;
-mod menu;
-mod openscad;
-mod preview;
-mod prompt;
-mod settings;
-mod status;
+mod core;
+mod ui;
 
 use std::io;
 

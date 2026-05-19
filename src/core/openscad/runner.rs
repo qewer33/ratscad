@@ -64,8 +64,9 @@ fn stl_to_obj(stl: &[u8]) -> Result<Vec<u8>, BuildError> {
     let body_start = HEADER + COUNT_BYTES;
     let declared = u32::from_le_bytes(stl[HEADER..body_start].try_into().unwrap()) as usize;
     let by_size = (stl.len() - body_start) / TRI_BYTES;
-    // OpenSCAD's binary STL writer leaves the count field zeroed; trust file size when the
-    // declared count is bogus.
+    // OpenSCAD zeroes the STL triangle-count field when writing to stdout,
+    // so we derive the real count from the file size whenever the declared
+    // value doesn't match.
     let count = if declared > 0 && body_start + declared * TRI_BYTES == stl.len() {
         declared
     } else {
@@ -83,7 +84,7 @@ fn stl_to_obj(stl: &[u8]) -> Result<Vec<u8>, BuildError> {
     let mut idx: u32 = 1;
     for tri in 0..count {
         let tri_base = body_start + tri * TRI_BYTES;
-        // OpenSCAD is Z-up, Bevy is Y-up: rotate +90° around X — (x, y, z) → (x, z, -y).
+        // Swap from OpenSCAD's Z-up frame to Bevy's Y-up frame: (x, y, z) becomes (x, z, -y).
         let nx = f32::from_le_bytes(stl[tri_base..tri_base + 4].try_into().unwrap());
         let ny = f32::from_le_bytes(stl[tri_base + 4..tri_base + 8].try_into().unwrap());
         let nz = f32::from_le_bytes(stl[tri_base + 8..tri_base + 12].try_into().unwrap());

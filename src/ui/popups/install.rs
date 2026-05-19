@@ -6,7 +6,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Gauge, Paragraph};
 
-use crate::openscad::InstallMsg;
+use crate::core::openscad::InstallMsg;
 
 pub enum InstallStatus {
     Starting,
@@ -35,8 +35,7 @@ impl InstallPopup {
         }
     }
 
-    // Drains messages from the install worker. Returns Done with the final
-    // path if the install finished, Failed on error, or InProgress otherwise.
+    /// Drains pending install messages and reports the current outcome.
     pub fn poll(&mut self) -> InstallOutcome {
         loop {
             match self.rx.try_recv() {
@@ -92,7 +91,6 @@ impl InstallPopup {
             ])
             .split(inner);
 
-        // Line 1: blank padding row, then URL on line 2.
         frame.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::styled("from ", Style::default().fg(Color::DarkGray)),

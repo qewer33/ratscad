@@ -12,8 +12,8 @@ fn highlights_for_c() -> Option<HashMap<String, String>> {
     Some(map)
 }
 
-// Based on vesper(), with function-family captures recoloured so they're
-// distinct from numbers / constants / types (which keep vesper's orange).
+// Mostly vesper(), with function captures repainted purple so they don't
+// share vesper's orange with numbers, constants and types.
 fn ratscad_theme() -> Vec<(&'static str, &'static str)> {
     vec![
         ("identifier", "#A5FCB6"),
