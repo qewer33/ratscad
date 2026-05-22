@@ -35,7 +35,7 @@ cargo install ratscad
 
 Requirements:
 
-- `openscad` on `PATH`, or set `OPENSCAD_BIN` to point at a specific binary. On Linux x86_64 ratscad will download a recent OpenSCAD snapshot automatically on first run, so this is only required on other platforms for now.
+- `openscad` on `PATH`, or set `OPENSCAD_BIN` to point at a specific binary. On Linux x86_64, ratscad will fall back to downloading a recent OpenSCAD snapshot on first run only if neither of those is available.
 - A GPU and graphics stack supported by Bevy and wgpu (for Ratty's renderer)
 
 ## Running
@@ -127,7 +127,7 @@ The UI thread runs the ratatui draw loop, handles keyboard and mouse input, and 
 
 There's a per-document build cache so switching tabs without editing doesn't kick off another OpenSCAD run. Each document keeps the last built source string alongside its OBJ bytes; on tab switch we compare the document's current text against its cached source, and if they match we re-register the cached bytes with Ratty and skip the subprocess entirely. Edits invalidate the cache implicitly, because the cached source no longer equals the current text.
 
-The build worker needs a path to the openscad binary. On first run, if no binary is cached, ratscad shows an install popup and downloads the official OpenSCAD nightly AppImage for Linux x86_64 from `files.openscad.org`. macOS and Windows currently fall back to whatever `openscad` is on `PATH`. The `OPENSCAD_BIN` environment variable overrides either path if you want to point at a specific build.
+The build worker needs a path to the openscad binary. ratscad first checks `OPENSCAD_BIN`, then `openscad` on `PATH`, then any cached snapshot. If none of those exist, Linux x86_64 shows an install popup and downloads the official OpenSCAD nightly AppImage from `files.openscad.org`. Other platforms currently fall back to whatever `openscad` is on `PATH`.
 
 Code is laid out as `src/main.rs` and `src/app.rs` at the top, with `src/core/` holding the openscad subsystem and persisted settings, and `src/ui/` holding the editor, preview, console, popups, menubar and toolbar.
 

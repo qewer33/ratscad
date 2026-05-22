@@ -59,9 +59,10 @@ impl App {
         let settings = Settings::load();
         let mut console = ConsolePane::new();
 
-        // If openscad is cached, spawn the build worker now. Otherwise leave
-        // build empty and show the install popup; the first build fires once
-        // the popup reports Done.
+        // If we already have an OpenSCAD binary via OPENSCAD_BIN, PATH, or a
+        // cached snapshot, spawn the build worker now. Otherwise leave build
+        // empty and show the install popup; the first build fires once the
+        // popup reports Done.
         let (build, install) = match openscad::try_cached() {
             Some(path) => {
                 let coord = BuildCoordinator::spawn(path);
@@ -699,4 +700,3 @@ fn render_header(frame: &mut Frame<'_>, area: Rect, focus: Focus, menu_index: us
         area,
     );
 }
-

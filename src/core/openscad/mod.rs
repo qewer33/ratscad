@@ -54,6 +54,10 @@ pub fn try_cached() -> Option<PathBuf> {
         }
     }
 
+    if let Ok(path) = which::which("openscad") {
+        return Some(path);
+    }
+
     let url = snapshot_url()?;
     let cache_path = cache_path_for(url).ok()?;
     if cache_path.exists() && is_executable(&cache_path) {
